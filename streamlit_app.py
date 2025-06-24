@@ -2060,11 +2060,12 @@ region = "us-east-1"
             st.write(f"**Network Eff:** {ai_perf.get('network_efficiency', 0):.1%}")
             st.write(f"**Primary Service:** {metrics.get('primary_service', 'datasync').upper()}")
         
-        # Service-specific recommendations
-        # Service-specific recommendations
+# REPLACE the service-specific recommendations section with this PURE STREAMLIT version:
+
+        # Service-specific recommendations (PURE STREAMLIT VERSION)
         if 'service_recommendations' in recommendations:
             st.markdown("### 🔧 Service-Specific Analysis")
-            st.markdown("*Performance estimates based on your configuration and data size*")
+            st.info(f"📊 Analysis for {config['data_size_gb']:,} GB dataset with {config['dx_bandwidth_mbps']:,} Mbps bandwidth")
             
             # Calculate number of columns based on services
             num_services = len(recommendations['service_recommendations'])
@@ -2073,67 +2074,54 @@ region = "us-east-1"
             elif num_services == 2:
                 service_cols = st.columns(2)
             else:
-                service_cols = st.columns(3)
+                service_cols = st.columns(min(3, num_services))
             
             for idx, (service, rec) in enumerate(recommendations['service_recommendations'].items()):
                 # Use modulo to wrap columns if more than 3 services
                 col_idx = idx % len(service_cols)
                 
                 with service_cols[col_idx]:
-                    suitability_color = {
-                        "High": "#28a745",
-                        "Medium": "#ffc107", 
-                        "Low": "#dc3545"
-                    }.get(rec.get('suitability', 'Medium'), "#ffc107")
-                    
-                    # Fix timeline display - add minimum thresholds and better formatting
+                    # Fix timeline display with better logic
                     estimated_days = rec.get('estimated_days', 0)
-                    if estimated_days < 1:
-                        timeline_display = f"{estimated_days * 24:.1f} hours"
-                    elif estimated_days < 0.1:
+                    if estimated_days < 0.1:
                         timeline_display = "< 3 hours"
+                    elif estimated_days < 1:
+                        timeline_display = f"{estimated_days * 24:.1f} hours"
+                    elif estimated_days < 2:
+                        timeline_display = f"{estimated_days:.1f} day"
                     else:
                         timeline_display = f"{estimated_days:.1f} days"
                     
-                    # Fix throughput display with context
+                    # Fix throughput display with better units
                     throughput_mbps = rec.get('throughput_mbps', 0)
-                    if throughput_mbps > 1000:
+                    if throughput_mbps >= 1000:
                         throughput_display = f"{throughput_mbps/1000:.1f} Gbps"
                     else:
                         throughput_display = f"{throughput_mbps:.0f} Mbps"
                     
-                    # Create a cleaner card layout
-                    st.markdown(f"""
-                    <div style="
-                        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-                        padding: 1rem;
-                        border-radius: 8px;
-                        border-left: 4px solid {suitability_color};
-                        margin-bottom: 1rem;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    ">
-                        <h4 style="color: #333; margin-bottom: 0.5rem;">{service.upper()}</h4>
+                    # Use Streamlit's built-in container for clean display
+                    with st.container():
+                        # Service header with suitability badge
+                        suitability = rec.get('suitability', 'Medium')
+                        if suitability == 'High':
+                            st.success(f"**{service.upper()}** - {suitability} Suitability")
+                        elif suitability == 'Medium':
+                            st.warning(f"**{service.upper()}** - {suitability} Suitability")
+                        else:
+                            st.error(f"**{service.upper()}** - {suitability} Suitability")
                         
-                        <div style="margin-bottom: 0.5rem;">
-                            <strong>Suitability:</strong> 
-                            <span style="color: {suitability_color}; font-weight: bold;">
-                                {rec.get('suitability', 'Medium')}
-                            </span>
-                        </div>
+                        # Performance metrics in a clean format
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.metric("Throughput", throughput_display)
+                        with col_b:
+                            st.metric("Timeline", timeline_display)
                         
-                        <div style="margin-bottom: 0.5rem;">
-                            <strong>Throughput:</strong> {throughput_display}
-                        </div>
+                        # Best use cases
+                        pros = rec.get('pros', ['General use'])
+                        st.caption(f"💡 Best for: {', '.join(pros[:2])}")
                         
-                        <div style="margin-bottom: 0.5rem;">
-                            <strong>Timeline:</strong> {timeline_display}
-                        </div>
-                        
-                        <div style="font-size: 0.85em; color: #666; margin-top: 0.5rem;">
-                            Best for: {', '.join(rec.get('pros', ['General use'])[:2])}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        st.divider()  # Add visual separation between services
         
         # Real AI Analysis if available
         if recommendations.get('ai_analysis'):
