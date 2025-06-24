@@ -830,7 +830,7 @@ class EnhancedMigrationCalculator:
     
     def get_optimal_networking_architecture(self, source_location, target_region, data_size_gb, 
                                       dx_bandwidth_mbps, database_types, data_types, config=None):
-        """Enhanced networking architecture with multi-service support"""
+        """Simplified networking architecture - no confusing service analysis"""
         
         data_size_gb = float(data_size_gb) if data_size_gb else 1000
         dx_bandwidth_mbps = float(dx_bandwidth_mbps) if dx_bandwidth_mbps else 1000
@@ -846,13 +846,11 @@ class EnhancedMigrationCalculator:
             "primary_method": "",
             "secondary_method": "",
             "networking_option": "",
-            "db_migration_tool": "",
             "rationale": "",
             "estimated_performance": {},
             "cost_efficiency": "",
             "risk_level": "",
-            "ai_analysis": "",
-            "service_recommendations": {}
+            "ai_analysis": ""
         }
         
         # Network architecture decision
@@ -866,118 +864,17 @@ class EnhancedMigrationCalculator:
             recommendations["networking_option"] = "Internet with VPN"
             network_score = 5
         
-# REPLACE DMS calculation with more realistic version:
-
-        if has_databases and data_size_tb <= 50:
-            # DMS calculation with realistic overhead
-            dms_throughput = min(1000, dx_bandwidth_mbps * 0.7)
-            
-            # DMS is typically slower due to database complexity
-            if config and config.get('database_size_gb'):
-                db_size_gb = config['database_size_gb']
-            else:
-                db_size_gb = data_size_gb * 0.3  # Assume 30% is database data
-            
-            # Database migrations have different overhead than file transfers
-            db_overhead_factor = 2.0  # Databases take longer due to consistency requirements
-            base_transfer_hours = (db_size_gb * 8 * 1000) / (dms_throughput * 3600)
-            dms_days = max(0.25, (base_transfer_hours / 24) * db_overhead_factor)  # Minimum 6 hours
-            
-            recommendations["service_recommendations"]["dms"] = {
-                "suitability": "High",
-                "throughput_mbps": dms_throughput,
-                "estimated_days": dms_days,
-                "pros": ["Minimal downtime", "CDC support", "Database optimized"],
-                "cons": ["Database only", "Complex setup"]
-            }
+        # Select primary method based on user selection and data characteristics
+        selected_services = config.get('selected_services', ['datasync']) if config else ['datasync']
         
-        # REPLACE with more realistic Snowball calculation:
-
-        # Snowball calculation - based on physical logistics not network speed
-        if data_size_tb > 50:
-            # Snowball timeline is mostly shipping + loading time
-            shipping_days = 6  # Round trip shipping
-            loading_time_days = max(1, data_size_tb / 8)  # ~8TB per day loading rate
-            processing_days = 2  # AWS processing time
-            total_snowball_days = shipping_days + loading_time_days + processing_days
-            
-            # Equivalent throughput for comparison (not actual network throughput)
-            equivalent_mbps = (data_size_gb * 8 * 1000) / (total_snowball_days * 24 * 3600)
-            
-            recommendations["service_recommendations"]["snowball"] = {
-                "suitability": "High" if data_size_tb > 100 else "Medium", 
-                "throughput_mbps": equivalent_mbps,
-                "estimated_days": total_snowball_days,
-                "pros": ["No bandwidth dependency", "Secure", "Cost-effective"],
-                "cons": ["Longer timeline", "Physical logistics"]
-            }
-        
-            # REPLACE THE ENTIRE BLOCK ABOVE WITH THIS FIXED VERSION:
-
-        # DataSync always available (FIXED CALCULATION)
-        datasync_throughput = min(dx_bandwidth_mbps * 0.8, 2000)
-        
-        # Fix timeline calculation with proper units and realistic overhead
-        if data_size_gb > 0 and datasync_throughput > 0:
-            # Convert GB to bits: GB * 8 * 1,000,000,000 (bits per GB)
-            data_size_bits = data_size_gb * 8 * 1_000_000_000
-            # Convert Mbps to bits per second: Mbps * 1,000,000 
-            throughput_bits_per_second = datasync_throughput * 1_000_000
-            
-            # Calculate base transfer time in seconds
-            transfer_seconds = data_size_bits / throughput_bits_per_second
-            # Convert to days
-            base_days = transfer_seconds / (24 * 3600)
-            
-            # Add realistic overhead factors for DataSync operations
-            setup_overhead = 0.1    # 10% for setup and initialization
-            retry_overhead = 0.2    # 20% for retries and error handling  
-            validation_overhead = 0.1  # 10% for validation and verification
-            
-            total_overhead = 1 + setup_overhead + retry_overhead + validation_overhead
-            datasync_days = base_days * total_overhead
-            
-            # Set realistic minimums based on data size
-            if data_size_gb < 100:  # Less than 100GB
-                datasync_days = max(0.125, datasync_days)  # Minimum 3 hours
-            elif data_size_gb < 1000:  # Less than 1TB
-                datasync_days = max(0.25, datasync_days)   # Minimum 6 hours  
-            else:  # 1TB or more
-                datasync_days = max(0.5, datasync_days)    # Minimum 12 hours
-        else:
-            datasync_days = 1.0  # Default fallback
-        
-        recommendations["service_recommendations"]["datasync"] = {
-            "suitability": "High" if not has_databases else "Medium",
-            "throughput_mbps": datasync_throughput,
-            "estimated_days": datasync_days,
-            "pros": ["File optimized", "Incremental sync", "Real-time monitoring"],
-            "cons": ["Network dependent", "File-based only"]
-        }
-        
-        # Select primary method
-        if has_databases and data_size_tb <= 50:
+        if 'dms' in selected_services and has_databases and data_size_tb <= 50:
             recommendations["primary_method"] = "DMS"
-        elif data_size_tb > 100 and dx_bandwidth_mbps < 1000:
+        elif 'snowball' in selected_services and data_size_tb > 100 and dx_bandwidth_mbps < 1000:
             recommendations["primary_method"] = "Snowball Edge"
         else:
             recommendations["primary_method"] = "DataSync"
         
         recommendations["secondary_method"] = "S3 Transfer Acceleration"
-        
-        # Performance estimate for primary method
-        primary_service = recommendations["service_recommendations"].get(
-            recommendations["primary_method"].lower().replace(" ", "_").replace("edge", ""), 
-            recommendations["service_recommendations"]["datasync"]
-        )
-        
-        recommendations["estimated_performance"] = {
-            "throughput_mbps": primary_service["throughput_mbps"],
-            "estimated_days": primary_service["estimated_days"],
-            "network_efficiency": network_score / 10,
-            "agents_used": config.get('num_datasync_agents', 1) if config else 1,
-            "instance_type": config.get('datasync_instance_type', 'm5.large') if config else 'm5.large'
-        }
         
         # Generate rationale
         recommendations["rationale"] = self._generate_ai_rationale(
@@ -1189,34 +1086,17 @@ class PDFReportGenerator:
         story.append(Paragraph(exec_summary, self.styles['Normal']))
         story.append(Spacer(1, 20))
         
-        # Service Analysis Section
-        story.append(Paragraph("Service Analysis Summary", self.heading_style))
+        # Performance Analysis Section
+        story.append(Paragraph("Performance Analysis Summary", self.heading_style))
         
-        service_data = []
-        if 'service_recommendations' in recommendations:
-            for service, rec in recommendations['service_recommendations'].items():
-                service_data.append([
-                    service.upper(),
-                    rec.get('suitability', 'N/A'),
-                    f"{rec.get('throughput_mbps', 0):.0f} Mbps",
-                    f"{rec.get('estimated_days', 0):.1f} days"
-                ])
-        
-        if service_data:
-            service_table = Table([['Service', 'Suitability', 'Throughput', 'Timeline']] + service_data,
-                                colWidths=[1.5*inch, 1*inch, 1.5*inch, 1.5*inch])
-            service_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
-            story.append(service_table)
-        
+        performance_summary = f"""
+        <b>Primary Service:</b> {metrics.get('primary_service', 'DataSync').upper()}<br/>
+        <b>Optimized Throughput:</b> {metrics.get('optimized_throughput', 0):.0f} Mbps<br/>
+        <b>Estimated Timeline:</b> {metrics.get('transfer_days', 0):.1f} days<br/>
+        <b>Network Efficiency:</b> {metrics.get('network_efficiency', 0):.1%}<br/>
+        <b>Total Cost:</b> ${metrics.get('cost_breakdown', {}).get('total', 0):,.0f}
+        """
+        story.append(Paragraph(performance_summary, self.styles['Normal']))
         story.append(Spacer(1, 20))
         
         # AI Recommendations
@@ -1368,7 +1248,7 @@ class MigrationPlatform:
         """, unsafe_allow_html=True)
     
     def detect_configuration_changes(self, config):
-        """Detect configuration changes"""
+        """Detect configuration changes and clear any cached service analysis"""
         import hashlib
         
         config_str = json.dumps(config, sort_keys=True, default=str)
@@ -1378,6 +1258,10 @@ class MigrationPlatform:
             if st.session_state.last_config_hash is not None:
                 st.session_state.config_change_count += 1
                 self.log_audit_event("CONFIG_CHANGED", f"Configuration updated - Change #{st.session_state.config_change_count}")
+                
+                # Clear any cached service recommendations to prevent confusion
+                if 'cached_service_recommendations' in st.session_state:
+                    del st.session_state.cached_service_recommendations
             
             st.session_state.last_config_hash = current_hash
             return True
@@ -1757,7 +1641,7 @@ region = "us-east-1"
         }
     
     def calculate_migration_metrics(self, config):
-        """Enhanced metrics calculation with multi-service support"""
+        """Enhanced metrics calculation with single source of truth"""
         try:
             # Basic calculations
             data_size_gb = float(config.get('data_size_gb', 1000))
@@ -1771,12 +1655,21 @@ region = "us-east-1"
             packet_loss = float(config.get('packet_loss', 0.1))
             dedicated_bandwidth = float(config.get('dedicated_bandwidth', 60))
             
-            # Service-specific calculations
-            metrics = {}
+            # UNIFIED SERVICE CALCULATION - Single Source of Truth
             selected_services = config.get('selected_services', ['datasync'])
             
-            # DataSync calculations (enhanced original)
-            if 'datasync' in selected_services:
+            # Determine primary service based on user selection and data characteristics
+            if 'dms' in selected_services and config.get('database_types'):
+                primary_service = 'dms'
+            elif 'snowball' in selected_services and data_size_tb > 50:
+                primary_service = 'snowball'
+            elif 'datasync' in selected_services:
+                primary_service = 'datasync'
+            else:
+                primary_service = 'datasync'  # Default fallback
+            
+            # Calculate performance for primary service only (single source of truth)
+            if primary_service == 'datasync':
                 throughput_result = self.calculator.calculate_enterprise_throughput(
                     config['datasync_instance_type'], config['num_datasync_agents'], config['avg_file_size'], 
                     config['dx_bandwidth_mbps'], config['network_latency'], config['network_jitter'], 
@@ -1785,10 +1678,10 @@ region = "us-east-1"
                 )
                 
                 if len(throughput_result) == 4:
-                    datasync_throughput, network_efficiency, theoretical_throughput, real_world_efficiency = throughput_result
+                    base_throughput, network_efficiency, theoretical_throughput, real_world_efficiency = throughput_result
                 else:
-                    datasync_throughput, network_efficiency = throughput_result
-                    theoretical_throughput = datasync_throughput * 1.5
+                    base_throughput, network_efficiency = throughput_result
+                    theoretical_throughput = base_throughput * 1.5
                     real_world_efficiency = 0.7
                 
                 # Apply network optimizations
@@ -1802,20 +1695,11 @@ region = "us-east-1"
                 congestion_factor = congestion_efficiency.get(config['network_congestion_control'], 1.0)
                 wan_factor = 1.3 if config['wan_optimization'] else 1.0
                 
-                optimized_throughput = datasync_throughput * tcp_factor * mtu_factor * congestion_factor * wan_factor
-                optimized_throughput = min(optimized_throughput, config['dx_bandwidth_mbps'] * (config['dedicated_bandwidth'] / 100))
-                optimized_throughput = max(1, optimized_throughput)
+                primary_throughput = base_throughput * tcp_factor * mtu_factor * congestion_factor * wan_factor
+                primary_throughput = min(primary_throughput, config['dx_bandwidth_mbps'] * (config['dedicated_bandwidth'] / 100))
+                primary_throughput = max(1, primary_throughput)
                 
-                metrics['datasync'] = {
-                    'throughput_mbps': optimized_throughput,
-                    'efficiency': optimized_throughput / config['dx_bandwidth_mbps'],
-                    'theoretical_throughput': theoretical_throughput,
-                    'real_world_efficiency': real_world_efficiency,
-                    'network_efficiency': network_efficiency
-                }
-            
-            # DMS calculations
-            if 'dms' in selected_services and config.get('database_types'):
+            elif primary_service == 'dms':
                 dms_result = self.calculator.calculate_dms_throughput(
                     config.get('dms_instance_type', 'dms.c5.large'),
                     config.get('database_size_gb', 5000),
@@ -1824,39 +1708,18 @@ region = "us-east-1"
                     config.get('network_pattern', 'direct_connect_dedicated'),
                     config['dx_bandwidth_mbps']
                 )
-                metrics['dms'] = dms_result
-            
-            # Snowball calculations
-            if 'snowball' in selected_services:
+                primary_throughput = dms_result['throughput_mbps']
+                network_efficiency = dms_result['network_efficiency']
+                
+            elif primary_service == 'snowball':
                 snowball_result = self.calculator.calculate_snowball_timeline(
                     config['data_size_gb'],
                     config.get('snowball_device_type', 'snowball_edge_storage'),
                     config.get('num_snowball_devices', 1),
                     config.get('shipping_location', 'domestic')
                 )
-                metrics['snowball'] = snowball_result
-            
-            # Use primary service for main metrics (backward compatibility)
-            if 'datasync' in metrics:
-                primary_service = 'datasync'
-                primary_throughput = metrics['datasync']['throughput_mbps']
-            elif 'dms' in metrics:
-                primary_service = 'dms'
-                primary_throughput = metrics['dms']['throughput_mbps']
-            elif 'snowball' in metrics:
-                primary_service = 'snowball'
-                primary_throughput = metrics['snowball']['throughput_equivalent_mbps']
-            else:
-                # Fallback
-                primary_service = 'datasync'
-                primary_throughput = 100
-                metrics['datasync'] = {
-                    'throughput_mbps': 100,
-                    'efficiency': 0.1,
-                    'theoretical_throughput': 150,
-                    'real_world_efficiency': 0.7,
-                    'network_efficiency': 0.7
-                }
+                primary_throughput = snowball_result['throughput_equivalent_mbps']
+                network_efficiency = 0.95  # Snowball not network dependent
             
             # Calculate timing
             available_hours_per_day = 16 if config['business_hours_restriction'] else 24
@@ -1875,7 +1738,7 @@ region = "us-east-1"
             )
             business_impact = self.calculator.calculate_business_impact(transfer_days, config['data_types'])
             
-            # Get AI recommendations (enhanced with multi-service)
+            # Get AI recommendations (simplified single source)
             target_region_short = config['target_aws_region'].split()[0]
             networking_recommendations = self.calculator.get_optimal_networking_architecture(
                 config['source_location'], target_region_short, config['data_size_gb'],
@@ -1888,11 +1751,20 @@ region = "us-east-1"
                 if ai_analysis:
                     networking_recommendations['ai_analysis'] = ai_analysis
             
+            # Simplify estimated performance to match actual metrics
+            networking_recommendations['estimated_performance'] = {
+                'throughput_mbps': primary_throughput,
+                'estimated_days': transfer_days,
+                'network_efficiency': network_efficiency,
+                'agents_used': config.get('num_datasync_agents', 1) if primary_service == 'datasync' else 1,
+                'instance_type': config.get('datasync_instance_type', 'm5.large') if primary_service == 'datasync' else 'N/A'
+            }
+            
             return {
                 'data_size_tb': data_size_tb,
                 'effective_data_gb': effective_data_gb,
                 'optimized_throughput': primary_throughput,
-                'network_efficiency': metrics.get(primary_service, {}).get('network_efficiency', 0.7),
+                'network_efficiency': network_efficiency,
                 'transfer_days': transfer_days,
                 'cost_breakdown': cost_breakdown,
                 'compliance_reqs': compliance_reqs,
@@ -1900,7 +1772,6 @@ region = "us-east-1"
                 'business_impact': business_impact,
                 'available_hours_per_day': available_hours_per_day,
                 'networking_recommendations': networking_recommendations,
-                'service_metrics': metrics,
                 'primary_service': primary_service,
                 'selected_services': selected_services
             }
@@ -1919,7 +1790,6 @@ region = "us-east-1"
                 'business_impact': {'score': 0.5, 'level': 'Medium'},
                 'available_hours_per_day': 24,
                 'networking_recommendations': {},
-                'service_metrics': {},
                 'primary_service': 'datasync',
                 'selected_services': ['datasync']
             }
@@ -1932,43 +1802,43 @@ region = "us-east-1"
         selected_services = config.get('selected_services', ['datasync'])
         st.info(f"🔧 **Active Services:** {', '.join([s.upper() for s in selected_services])}")
         
-        # Multi-service comparison if multiple services selected
-        if len(selected_services) > 1 and 'service_metrics' in metrics:
-            st.markdown('<div class="section-header">📊 Multi-Service Performance Comparison</div>', unsafe_allow_html=True)
-            
-            comparison_data = []
-            for service in selected_services:
-                if service in metrics['service_metrics']:
-                    service_data = metrics['service_metrics'][service]
-                    
-                    if service == 'datasync':
-                        comparison_data.append({
-                            "Service": "DataSync",
-                            "Throughput (Mbps)": f"{service_data['throughput_mbps']:.0f}",
-                            "Efficiency": f"{service_data['efficiency']:.1%}",
-                            "Timeline (Days)": f"{(config['data_size_gb'] * 8 * 1000) / (service_data['throughput_mbps'] * 24 * 3600):.1f}",
-                            "Best For": "Files & Objects"
-                        })
-                    elif service == 'dms':
-                        comparison_data.append({
-                            "Service": "DMS",
-                            "Throughput (Mbps)": f"{service_data['throughput_mbps']:.0f}",
-                            "Efficiency": f"{service_data['efficiency']:.1%}",
-                            "Timeline (Days)": f"{service_data['full_load_time_hours'] / 24:.1f}",
-                            "Best For": "Databases"
-                        })
-                    elif service == 'snowball':
-                        comparison_data.append({
-                            "Service": "Snowball",
-                            "Throughput (Mbps)": f"{service_data['throughput_equivalent_mbps']:.0f}",
-                            "Efficiency": f"{service_data['device_utilization']:.1%}",
-                            "Timeline (Days)": f"{service_data['total_timeline_days']:.1f}",
-                            "Best For": "Large Datasets"
-                        })
-            
-            if comparison_data:
-                df_comparison = pd.DataFrame(comparison_data)
-                st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+        # Service Selection Summary (Single Source of Truth)
+        st.markdown("### 🔧 Active Services Configuration")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Primary service info
+            primary_service = metrics.get('primary_service', 'datasync')
+            service_icons = {'datasync': '📁', 'dms': '🗄️', 'snowball': '📦'}
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>{service_icons.get(primary_service, '🔧')} Primary Service</h4>
+                <p><strong>{primary_service.upper()}</strong></p>
+                <p>Optimized for your data profile</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            # Performance summary
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>⚡ Unified Performance</h4>
+                <p><strong>{metrics['optimized_throughput']:.0f} Mbps</strong></p>
+                <p>{metrics['network_efficiency']:.1%} efficiency</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            # Services status
+            active_services = len(selected_services)
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>🎯 Services Enabled</h4>
+                <p><strong>{active_services} of 3</strong></p>
+                <p>{', '.join([s.upper() for s in selected_services])}</p>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Executive metrics
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -2060,69 +1930,6 @@ region = "us-east-1"
             st.write(f"**Network Eff:** {ai_perf.get('network_efficiency', 0):.1%}")
             st.write(f"**Primary Service:** {metrics.get('primary_service', 'datasync').upper()}")
         
-# REPLACE the service-specific recommendations section with this PURE STREAMLIT version:
-
-        # Service-specific recommendations (PURE STREAMLIT VERSION)
-        if 'service_recommendations' in recommendations:
-            st.markdown("### 🔧 Service-Specific Analysis")
-            st.info(f"📊 Analysis for {config['data_size_gb']:,} GB dataset with {config['dx_bandwidth_mbps']:,} Mbps bandwidth")
-            
-            # Calculate number of columns based on services
-            num_services = len(recommendations['service_recommendations'])
-            if num_services == 1:
-                service_cols = st.columns([1])
-            elif num_services == 2:
-                service_cols = st.columns(2)
-            else:
-                service_cols = st.columns(min(3, num_services))
-            
-            for idx, (service, rec) in enumerate(recommendations['service_recommendations'].items()):
-                # Use modulo to wrap columns if more than 3 services
-                col_idx = idx % len(service_cols)
-                
-                with service_cols[col_idx]:
-                    # Fix timeline display with better logic
-                    estimated_days = rec.get('estimated_days', 0)
-                    if estimated_days < 0.1:
-                        timeline_display = "< 3 hours"
-                    elif estimated_days < 1:
-                        timeline_display = f"{estimated_days * 24:.1f} hours"
-                    elif estimated_days < 2:
-                        timeline_display = f"{estimated_days:.1f} day"
-                    else:
-                        timeline_display = f"{estimated_days:.1f} days"
-                    
-                    # Fix throughput display with better units
-                    throughput_mbps = rec.get('throughput_mbps', 0)
-                    if throughput_mbps >= 1000:
-                        throughput_display = f"{throughput_mbps/1000:.1f} Gbps"
-                    else:
-                        throughput_display = f"{throughput_mbps:.0f} Mbps"
-                    
-                    # Use Streamlit's built-in container for clean display
-                    with st.container():
-                        # Service header with suitability badge
-                        suitability = rec.get('suitability', 'Medium')
-                        if suitability == 'High':
-                            st.success(f"**{service.upper()}** - {suitability} Suitability")
-                        elif suitability == 'Medium':
-                            st.warning(f"**{service.upper()}** - {suitability} Suitability")
-                        else:
-                            st.error(f"**{service.upper()}** - {suitability} Suitability")
-                        
-                        # Performance metrics in a clean format
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            st.metric("Throughput", throughput_display)
-                        with col_b:
-                            st.metric("Timeline", timeline_display)
-                        
-                        # Best use cases
-                        pros = rec.get('pros', ['General use'])
-                        st.caption(f"💡 Best for: {', '.join(pros[:2])}")
-                        
-                        st.divider()  # Add visual separation between services
-        
         # Real AI Analysis if available
         if recommendations.get('ai_analysis'):
             st.markdown('<div class="section-header">🔮 Advanced Claude AI Analysis</div>', unsafe_allow_html=True)
@@ -2196,7 +2003,7 @@ region = "us-east-1"
                 st.write(alert)
     
     def render_multiservice_tab(self, config, metrics):
-        """Dedicated multi-service comparison tab"""
+        """Simplified multi-service comparison tab"""
         st.markdown('<div class="section-header">🔧 Multi-Service Migration Analysis</div>', unsafe_allow_html=True)
         
         selected_services = config.get('selected_services', ['datasync'])
@@ -2206,142 +2013,76 @@ region = "us-east-1"
             st.info("Use the sidebar to enable additional services like DMS, Snowball, or Network Pattern Analysis.")
             return
         
-        # Service comparison matrix
-        st.subheader("📊 Service Performance Matrix")
+        # Service overview
+        st.subheader("📊 Active Services Overview")
         
-        if 'service_metrics' in metrics:
-            comparison_data = []
-            
-            for service in selected_services:
-                if service in metrics['service_metrics']:
-                    service_data = metrics['service_metrics'][service]
-                    
-                    if service == 'datasync':
-                        comparison_data.append({
-                            "Service": "DataSync",
-                            "Throughput (Mbps)": service_data['throughput_mbps'],
-                            "Efficiency (%)": service_data['efficiency'] * 100,
-                            "Estimated Days": (config['data_size_gb'] * 8 * 1000) / (service_data['throughput_mbps'] * 24 * 3600),
-                            "Cost Factor": 1.0,
-                            "Use Case": "Files & Objects",
-                            "Incremental": "Yes"
-                        })
-                    elif service == 'dms':
-                        comparison_data.append({
-                            "Service": "DMS",
-                            "Throughput (Mbps)": service_data['throughput_mbps'],
-                            "Efficiency (%)": service_data['efficiency'] * 100,
-                            "Estimated Days": service_data['full_load_time_hours'] / 24,
-                            "Cost Factor": 1.2,
-                            "Use Case": "Databases",
-                            "Incremental": "Yes (CDC)"
-                        })
-                    elif service == 'snowball':
-                        comparison_data.append({
-                            "Service": "Snowball",
-                            "Throughput (Mbps)": service_data['throughput_equivalent_mbps'],
-                            "Efficiency (%)": service_data['device_utilization'] * 100,
-                            "Estimated Days": service_data['total_timeline_days'],
-                            "Cost Factor": 0.6,
-                            "Use Case": "Large Datasets",
-                            "Incremental": "No"
-                        })
-            
-            if comparison_data:
-                df_comparison = pd.DataFrame(comparison_data)
+        cols = st.columns(len(selected_services))
+        service_info = {
+            'datasync': {'name': 'AWS DataSync', 'icon': '📁', 'best_for': 'Files & Objects'},
+            'dms': {'name': 'Database Migration Service', 'icon': '🗄️', 'best_for': 'Databases'},
+            'snowball': {'name': 'AWS Snowball', 'icon': '📦', 'best_for': 'Large Datasets'}
+        }
+        
+        for idx, service in enumerate(selected_services):
+            with cols[idx]:
+                info = service_info.get(service, {'name': service.upper(), 'icon': '🔧', 'best_for': 'General'})
                 
-                # Display detailed comparison table
-                st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+                is_primary = (service == metrics.get('primary_service', 'datasync'))
+                status = "🎯 Primary" if is_primary else "🔧 Secondary"
                 
-                # Performance comparison charts
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    fig_throughput = px.bar(
-                        df_comparison,
-                        x="Service",
-                        y="Throughput (Mbps)",
-                        title="Throughput Comparison",
-                        color="Service",
-                        color_discrete_map={
-                            "DataSync": "#FF9900",
-                            "DMS": "#007bff", 
-                            "Snowball": "#28a745"
-                        }
-                    )
-                    st.plotly_chart(fig_throughput, use_container_width=True)
-                
-                with col2:
-                    fig_timeline = px.bar(
-                        df_comparison,
-                        x="Service",
-                        y="Estimated Days",
-                        title="Timeline Comparison",
-                        color="Service",
-                        color_discrete_map={
-                            "DataSync": "#FF9900",
-                            "DMS": "#007bff",
-                            "Snowball": "#28a745"
-                        }
-                    )
-                    st.plotly_chart(fig_timeline, use_container_width=True)
-                
-                # 3D Performance Analysis
-                st.subheader("🎯 3D Performance Analysis")
-                
-                fig_3d = px.scatter_3d(
-                    df_comparison,
-                    x="Throughput (Mbps)",
-                    y="Estimated Days", 
-                    z="Efficiency (%)",
-                    color="Service",
-                    size="Cost Factor",
-                    hover_data=["Use Case", "Incremental"],
-                    title="3D Service Performance Analysis",
-                    color_discrete_map={
-                        "DataSync": "#FF9900",
-                        "DMS": "#007bff",
-                        "Snowball": "#28a745"
-                    }
-                )
-                st.plotly_chart(fig_3d, use_container_width=True)
+                st.markdown(f"""
+                <div class="service-card">
+                    <h4>{info['icon']} {info['name']}</h4>
+                    <p><strong>Status:</strong> {status}</p>
+                    <p><strong>Best For:</strong> {info['best_for']}</p>
+                    <p><strong>Selected:</strong> ✅</p>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Primary service performance
+        st.subheader("⚡ Primary Service Performance")
+        
+        primary_service = metrics.get('primary_service', 'datasync')
+        primary_info = service_info.get(primary_service, service_info['datasync'])
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Primary Service", f"{primary_info['icon']} {primary_service.upper()}")
+        
+        with col2:
+            st.metric("Throughput", f"{metrics['optimized_throughput']:.0f} Mbps")
+        
+        with col3:
+            st.metric("Timeline", f"{metrics['transfer_days']:.1f} days")
+        
+        with col4:
+            st.metric("Efficiency", f"{metrics['network_efficiency']:.1%}")
+        
+        # Service selection strategy
+        st.subheader("🎯 Multi-Service Strategy")
+        
+        if len(selected_services) == 1:
+            st.info(f"**Single Service Approach:** Using {selected_services[0].upper()} as the primary migration method.")
+        elif len(selected_services) == 2:
+            st.info(f"**Dual Service Strategy:** Primary service is {primary_service.upper()}, with {[s for s in selected_services if s != primary_service][0].upper()} as backup/specialized option.")
+        else:
+            st.success(f"**Comprehensive Strategy:** Using all {len(selected_services)} services for maximum coverage and flexibility.")
         
         # Service recommendations
-        if 'service_recommendations' in metrics.get('networking_recommendations', {}):
-            st.subheader("🤖 AI Service Recommendations")
-            
-            recommendations = metrics['networking_recommendations']['service_recommendations']
-            
-            rec_cols = st.columns(len(recommendations))
-            for idx, (service, rec) in enumerate(recommendations.items()):
-                with rec_cols[idx]:
-                    suitability_color = {
-                        "High": "#28a745",
-                        "Medium": "#ffc107",
-                        "Low": "#dc3545"
-                    }.get(rec.get('suitability', 'Medium'), "#ffc107")
-                    
-                    st.markdown(f"""
-                    <div class="service-card" style="border-left-color: {suitability_color};">
-                        <h4>{service.upper()} Analysis</h4>
-                        <p><strong>Suitability:</strong> <span style="color: {suitability_color};">{rec.get('suitability', 'Medium')}</span></p>
-                        <p><strong>Pros:</strong></p>
-                        <ul>
-                    """, unsafe_allow_html=True)
-                    
-                    for pro in rec.get('pros', []):
-                        st.markdown(f"<li>{pro}</li>", unsafe_allow_html=True)
-                    
-                    st.markdown("""
-                        </ul>
-                        <p><strong>Cons:</strong></p>
-                        <ul>
-                    """, unsafe_allow_html=True)
-                    
-                    for con in rec.get('cons', []):
-                        st.markdown(f"<li>{con}</li>", unsafe_allow_html=True)
-                    
-                    st.markdown("</ul></div>", unsafe_allow_html=True)
+        st.subheader("🤖 AI Service Recommendations")
+        
+        recommendations = metrics['networking_recommendations']
+        
+        st.markdown(f"""
+        <div class="recommendation-box">
+            <h4>Service Strategy Analysis</h4>
+            <p><strong>Primary Recommendation:</strong> {recommendations.get('primary_method', 'DataSync')}</p>
+            <p><strong>Your Selection:</strong> {', '.join([s.upper() for s in selected_services])}</p>
+            <p><strong>Strategy Alignment:</strong> {'✅ Optimal' if recommendations.get('primary_method', '').lower().replace(' ', '') in [s.replace('_', '') for s in selected_services] else '⚠️ Consider adjustment'}</p>
+            <p><strong>Rationale:</strong> {recommendations.get('rationale', 'Analysis based on your data characteristics and network setup.')}</p>
+        </div>
+        """, unsafe_allow_html=True)
     
     def render_network_tab(self, config, metrics):
         """Enhanced network analysis with multi-service support"""
@@ -2367,40 +2108,41 @@ region = "us-east-1"
         with col4:
             st.metric("Latency Impact", f"{config['network_latency']} ms", "to target region")
         
-        # Multi-service network impact
-        if 'service_metrics' in metrics and len(selected_services) > 1:
+        # Network impact by selected services
+        if len(selected_services) > 1:
             st.subheader("🔗 Network Impact by Service")
             
             network_impact_data = []
             for service in selected_services:
-                if service in metrics['service_metrics']:
-                    service_data = metrics['service_metrics'][service]
-                    
-                    # Calculate network sensitivity
-                    if service == 'datasync':
-                        latency_sensitivity = "High"
-                        bandwidth_dependency = "Very High"
-                        network_score = service_data.get('efficiency', 0.7) * 100
-                    elif service == 'dms':
-                        latency_sensitivity = "Medium"
-                        bandwidth_dependency = "Medium" 
-                        network_score = service_data.get('network_efficiency', 0.8) * 100
-                    elif service == 'snowball':
-                        latency_sensitivity = "None"
-                        bandwidth_dependency = "None"
-                        network_score = 95  # Not network dependent
-                    else:
-                        latency_sensitivity = "Medium"
-                        bandwidth_dependency = "Medium"
-                        network_score = 75
-                    
-                    network_impact_data.append({
-                        "Service": service.upper(),
-                        "Latency Sensitivity": latency_sensitivity,
-                        "Bandwidth Dependency": bandwidth_dependency,
-                        "Network Score": network_score,
-                        "Pattern Efficiency": f"{network_score:.0f}%"
-                    })
+                # Calculate general network sensitivity for each service type
+                if service == 'datasync':
+                    latency_sensitivity = "High"
+                    bandwidth_dependency = "Very High"
+                    network_score = metrics['network_efficiency'] * 100
+                elif service == 'dms':
+                    latency_sensitivity = "Medium"
+                    bandwidth_dependency = "Medium" 
+                    network_score = 80  # DMS is less network sensitive
+                elif service == 'snowball':
+                    latency_sensitivity = "None"
+                    bandwidth_dependency = "None"
+                    network_score = 95  # Not network dependent
+                else:
+                    latency_sensitivity = "Medium"
+                    bandwidth_dependency = "Medium"
+                    network_score = 75
+                
+                # Highlight primary service
+                is_primary = (service == metrics.get('primary_service', 'datasync'))
+                service_display = f"🎯 {service.upper()}" if is_primary else service.upper()
+                
+                network_impact_data.append({
+                    "Service": service_display,
+                    "Latency Sensitivity": latency_sensitivity,
+                    "Bandwidth Dependency": bandwidth_dependency,
+                    "Network Score": network_score,
+                    "Status": "Primary" if is_primary else "Secondary"
+                })
             
             if network_impact_data:
                 df_network = pd.DataFrame(network_impact_data)
@@ -2500,39 +2242,54 @@ region = "us-east-1"
         with col4:
             st.metric("Cost per TB", f"${metrics['cost_breakdown']['total']/metrics['data_size_tb']:.0f}")
         
-        # Service-specific performance analysis
-        if 'service_metrics' in metrics and len(selected_services) > 1:
-            st.subheader("🔧 Service Performance Breakdown")
+        # Service performance summary
+        if len(selected_services) > 1:
+            st.subheader("🔧 Service Performance Summary")
             
             performance_data = []
             for service in selected_services:
-                if service in metrics['service_metrics']:
-                    service_data = metrics['service_metrics'][service]
+                is_primary = (service == metrics.get('primary_service', 'datasync'))
+                
+                if service == 'datasync':
+                    if is_primary:
+                        throughput = metrics['optimized_throughput']
+                        efficiency = metrics['network_efficiency'] * 100
+                    else:
+                        throughput = metrics['optimized_throughput'] * 0.8  # Estimated if not primary
+                        efficiency = 75
+                    bottleneck = "Network/Storage" if efficiency < 60 else "None"
                     
-                    if service == 'datasync':
-                        performance_data.append({
-                            "Service": "DataSync",
-                            "Throughput (Mbps)": service_data['throughput_mbps'],
-                            "Efficiency (%)": service_data['efficiency'] * 100,
-                            "Optimization Potential": "High" if service_data['efficiency'] < 0.8 else "Medium",
-                            "Bottleneck": "Network/Storage" if service_data['efficiency'] < 0.6 else "None"
-                        })
-                    elif service == 'dms':
-                        performance_data.append({
-                            "Service": "DMS", 
-                            "Throughput (Mbps)": service_data['throughput_mbps'],
-                            "Efficiency (%)": service_data['efficiency'] * 100,
-                            "Optimization Potential": "Medium",
-                            "Bottleneck": "Database I/O" if service_data['database_compatibility'] < 0.9 else "None"
-                        })
-                    elif service == 'snowball':
-                        performance_data.append({
-                            "Service": "Snowball",
-                            "Throughput (Mbps)": service_data['throughput_equivalent_mbps'],
-                            "Efficiency (%)": service_data['device_utilization'] * 100,
-                            "Optimization Potential": "Low",
-                            "Bottleneck": "Physical Logistics"
-                        })
+                elif service == 'dms':
+                    if is_primary:
+                        throughput = metrics['optimized_throughput']
+                        efficiency = metrics['network_efficiency'] * 100
+                    else:
+                        throughput = min(1000, config['dx_bandwidth_mbps'] * 0.7)  # DMS estimate
+                        efficiency = 75
+                    bottleneck = "Database I/O" if config.get('database_types') else "Configuration"
+                    
+                elif service == 'snowball':
+                    # Snowball equivalent throughput
+                    if is_primary:
+                        throughput = metrics['optimized_throughput']
+                        efficiency = 95  # Not network dependent
+                    else:
+                        data_size_tb = config['data_size_gb'] / 1024
+                        total_days = 14 + max(1, data_size_tb / 8)  # Shipping + loading
+                        throughput = (config['data_size_gb'] * 8 * 1000) / (total_days * 24 * 3600)
+                        efficiency = 95
+                    bottleneck = "Physical Logistics"
+                
+                optimization_potential = "High" if efficiency < 60 else "Medium" if efficiency < 80 else "Low"
+                service_display = f"🎯 {service.upper()}" if is_primary else service.upper()
+                
+                performance_data.append({
+                    "Service": service_display,
+                    "Throughput (Mbps)": throughput,
+                    "Efficiency (%)": efficiency,
+                    "Optimization Potential": optimization_potential,
+                    "Primary Bottleneck": bottleneck
+                })
             
             if performance_data:
                 df_performance = pd.DataFrame(performance_data)
@@ -2580,7 +2337,8 @@ region = "us-east-1"
         # Performance comparison chart
         st.subheader("📊 Service Performance Comparison")
         
-        if 'service_metrics' in metrics and len(selected_services) > 1:
+        if len(selected_services) > 1:
+           if 'service_metrics' in metrics and len(selected_services) > 1:
             # Create performance comparison visualization
             services = []
             throughputs = []
