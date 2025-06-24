@@ -866,14 +866,22 @@ class EnhancedMigrationCalculator:
             recommendations["networking_option"] = "Internet with VPN"
             network_score = 5
         
-        # Multi-service recommendations
+# REPLACE DMS calculation with more realistic version:
+
         if has_databases and data_size_tb <= 50:
-            recommendations["primary_method"] = "DMS"
-            recommendations["db_migration_tool"] = "DMS"
-            
-            # DMS performance estimate
+            # DMS calculation with realistic overhead
             dms_throughput = min(1000, dx_bandwidth_mbps * 0.7)
-            dms_days = data_size_tb / 0.5  # DMS typically slower
+            
+            # DMS is typically slower due to database complexity
+            if config and config.get('database_size_gb'):
+                db_size_gb = config['database_size_gb']
+            else:
+                db_size_gb = data_size_gb * 0.3  # Assume 30% is database data
+            
+            # Database migrations have different overhead than file transfers
+            db_overhead_factor = 2.0  # Databases take longer due to consistency requirements
+            base_transfer_hours = (db_size_gb * 8 * 1000) / (dms_throughput * 3600)
+            dms_days = max(0.25, (base_transfer_hours / 24) * db_overhead_factor)  # Minimum 6 hours
             
             recommendations["service_recommendations"]["dms"] = {
                 "suitability": "High",
@@ -883,37 +891,69 @@ class EnhancedMigrationCalculator:
                 "cons": ["Database only", "Complex setup"]
             }
         
-        if data_size_tb > 50 or dx_bandwidth_mbps < 1000:
+        # REPLACE with more realistic Snowball calculation:
+
+        # Snowball calculation - based on physical logistics not network speed
+        if data_size_tb > 50:
+            # Snowball timeline is mostly shipping + loading time
+            shipping_days = 6  # Round trip shipping
+            loading_time_days = max(1, data_size_tb / 8)  # ~8TB per day loading rate
+            processing_days = 2  # AWS processing time
+            total_snowball_days = shipping_days + loading_time_days + processing_days
+            
+            # Equivalent throughput for comparison (not actual network throughput)
+            equivalent_mbps = (data_size_gb * 8 * 1000) / (total_snowball_days * 24 * 3600)
+            
             recommendations["service_recommendations"]["snowball"] = {
-                "suitability": "High" if data_size_tb > 100 else "Medium",
-                "throughput_mbps": (data_size_gb * 8 * 1000) / (14 * 24 * 3600),
-                "estimated_days": 14 + (data_size_tb / 10),
+                "suitability": "High" if data_size_tb > 100 else "Medium", 
+                "throughput_mbps": equivalent_mbps,
+                "estimated_days": total_snowball_days,
                 "pros": ["No bandwidth dependency", "Secure", "Cost-effective"],
                 "cons": ["Longer timeline", "Physical logistics"]
             }
         
-                    # DataSync always available
-            # DataSync always available
-            datasync_throughput = min(dx_bandwidth_mbps * 0.8, 2000)
+            # REPLACE THE ENTIRE BLOCK ABOVE WITH THIS FIXED VERSION:
 
-            # Fix the timeline calculation to be more realistic
-            data_size_bits = data_size_gb * 8 * 1000 * 1000 * 1000  # Convert GB to bits
-            throughput_bits_per_second = datasync_throughput * 1000 * 1000  # Convert Mbps to bits/sec
-
-            # Calculate transfer time in seconds, then convert to days
+        # DataSync always available (FIXED CALCULATION)
+        datasync_throughput = min(dx_bandwidth_mbps * 0.8, 2000)
+        
+        # Fix timeline calculation with proper units and realistic overhead
+        if data_size_gb > 0 and datasync_throughput > 0:
+            # Convert GB to bits: GB * 8 * 1,000,000,000 (bits per GB)
+            data_size_bits = data_size_gb * 8 * 1_000_000_000
+            # Convert Mbps to bits per second: Mbps * 1,000,000 
+            throughput_bits_per_second = datasync_throughput * 1_000_000
+            
+            # Calculate base transfer time in seconds
             transfer_seconds = data_size_bits / throughput_bits_per_second
-            datasync_days = transfer_seconds / (24 * 3600)
-
-            # Add realistic overhead and minimum timeframes
-            datasync_days = max(0.125, datasync_days * 1.4)  # 40% overhead, minimum 3 hours
-
-            recommendations["service_recommendations"]["datasync"] = {
-                "suitability": "High" if not has_databases else "Medium",
-                "throughput_mbps": datasync_throughput,
-                "estimated_days": datasync_days,
-                "pros": ["File optimized", "Incremental sync", "Real-time monitoring"],
-                "cons": ["Network dependent", "File-based only"]
-            }
+            # Convert to days
+            base_days = transfer_seconds / (24 * 3600)
+            
+            # Add realistic overhead factors for DataSync operations
+            setup_overhead = 0.1    # 10% for setup and initialization
+            retry_overhead = 0.2    # 20% for retries and error handling  
+            validation_overhead = 0.1  # 10% for validation and verification
+            
+            total_overhead = 1 + setup_overhead + retry_overhead + validation_overhead
+            datasync_days = base_days * total_overhead
+            
+            # Set realistic minimums based on data size
+            if data_size_gb < 100:  # Less than 100GB
+                datasync_days = max(0.125, datasync_days)  # Minimum 3 hours
+            elif data_size_gb < 1000:  # Less than 1TB
+                datasync_days = max(0.25, datasync_days)   # Minimum 6 hours  
+            else:  # 1TB or more
+                datasync_days = max(0.5, datasync_days)    # Minimum 12 hours
+        else:
+            datasync_days = 1.0  # Default fallback
+        
+        recommendations["service_recommendations"]["datasync"] = {
+            "suitability": "High" if not has_databases else "Medium",
+            "throughput_mbps": datasync_throughput,
+            "estimated_days": datasync_days,
+            "pros": ["File optimized", "Incremental sync", "Real-time monitoring"],
+            "cons": ["Network dependent", "File-based only"]
+        }
         
         # Select primary method
         if has_databases and data_size_tb <= 50:
