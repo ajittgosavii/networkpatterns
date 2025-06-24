@@ -892,17 +892,28 @@ class EnhancedMigrationCalculator:
                 "cons": ["Longer timeline", "Physical logistics"]
             }
         
-        # DataSync always available
-        datasync_throughput = min(dx_bandwidth_mbps * 0.8, 2000)
-        datasync_days = (data_size_gb * 8 * 1000) / (datasync_throughput * 24 * 3600)
-        
-        recommendations["service_recommendations"]["datasync"] = {
-            "suitability": "High" if not has_databases else "Medium",
-            "throughput_mbps": datasync_throughput,
-            "estimated_days": datasync_days,
-            "pros": ["File optimized", "Incremental sync", "Real-time monitoring"],
-            "cons": ["Network dependent", "File-based only"]
-        }
+                    # DataSync always available
+            # DataSync always available
+            datasync_throughput = min(dx_bandwidth_mbps * 0.8, 2000)
+
+            # Fix the timeline calculation to be more realistic
+            data_size_bits = data_size_gb * 8 * 1000 * 1000 * 1000  # Convert GB to bits
+            throughput_bits_per_second = datasync_throughput * 1000 * 1000  # Convert Mbps to bits/sec
+
+            # Calculate transfer time in seconds, then convert to days
+            transfer_seconds = data_size_bits / throughput_bits_per_second
+            datasync_days = transfer_seconds / (24 * 3600)
+
+            # Add realistic overhead and minimum timeframes
+            datasync_days = max(0.125, datasync_days * 1.4)  # 40% overhead, minimum 3 hours
+
+            recommendations["service_recommendations"]["datasync"] = {
+                "suitability": "High" if not has_databases else "Medium",
+                "throughput_mbps": datasync_throughput,
+                "estimated_days": datasync_days,
+                "pros": ["File optimized", "Incremental sync", "Real-time monitoring"],
+                "cons": ["Network dependent", "File-based only"]
+            }
         
         # Select primary method
         if has_databases and data_size_tb <= 50:
@@ -2010,24 +2021,77 @@ region = "us-east-1"
             st.write(f"**Primary Service:** {metrics.get('primary_service', 'datasync').upper()}")
         
         # Service-specific recommendations
+        # Service-specific recommendations
         if 'service_recommendations' in recommendations:
             st.markdown("### 🔧 Service-Specific Analysis")
+            st.markdown("*Performance estimates based on your configuration and data size*")
             
-            service_cols = st.columns(len(recommendations['service_recommendations']))
+            # Calculate number of columns based on services
+            num_services = len(recommendations['service_recommendations'])
+            if num_services == 1:
+                service_cols = st.columns([1])
+            elif num_services == 2:
+                service_cols = st.columns(2)
+            else:
+                service_cols = st.columns(3)
+            
             for idx, (service, rec) in enumerate(recommendations['service_recommendations'].items()):
-                with service_cols[idx]:
+                # Use modulo to wrap columns if more than 3 services
+                col_idx = idx % len(service_cols)
+                
+                with service_cols[col_idx]:
                     suitability_color = {
                         "High": "#28a745",
                         "Medium": "#ffc107", 
                         "Low": "#dc3545"
                     }.get(rec.get('suitability', 'Medium'), "#ffc107")
                     
+                    # Fix timeline display - add minimum thresholds and better formatting
+                    estimated_days = rec.get('estimated_days', 0)
+                    if estimated_days < 1:
+                        timeline_display = f"{estimated_days * 24:.1f} hours"
+                    elif estimated_days < 0.1:
+                        timeline_display = "< 3 hours"
+                    else:
+                        timeline_display = f"{estimated_days:.1f} days"
+                    
+                    # Fix throughput display with context
+                    throughput_mbps = rec.get('throughput_mbps', 0)
+                    if throughput_mbps > 1000:
+                        throughput_display = f"{throughput_mbps/1000:.1f} Gbps"
+                    else:
+                        throughput_display = f"{throughput_mbps:.0f} Mbps"
+                    
+                    # Create a cleaner card layout
                     st.markdown(f"""
-                    <div class="service-card" style="border-left-color: {suitability_color};">
-                        <h4>{service.upper()}</h4>
-                        <p><strong>Suitability:</strong> <span style="color: {suitability_color};">{rec.get('suitability', 'Medium')}</span></p>
-                        <p><strong>Throughput:</strong> {rec.get('throughput_mbps', 0):.0f} Mbps</p>
-                        <p><strong>Timeline:</strong> {rec.get('estimated_days', 0):.1f} days</p>
+                    <div style="
+                        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+                        padding: 1rem;
+                        border-radius: 8px;
+                        border-left: 4px solid {suitability_color};
+                        margin-bottom: 1rem;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    ">
+                        <h4 style="color: #333; margin-bottom: 0.5rem;">{service.upper()}</h4>
+                        
+                        <div style="margin-bottom: 0.5rem;">
+                            <strong>Suitability:</strong> 
+                            <span style="color: {suitability_color}; font-weight: bold;">
+                                {rec.get('suitability', 'Medium')}
+                            </span>
+                        </div>
+                        
+                        <div style="margin-bottom: 0.5rem;">
+                            <strong>Throughput:</strong> {throughput_display}
+                        </div>
+                        
+                        <div style="margin-bottom: 0.5rem;">
+                            <strong>Timeline:</strong> {timeline_display}
+                        </div>
+                        
+                        <div style="font-size: 0.85em; color: #666; margin-top: 0.5rem;">
+                            Best for: {', '.join(rec.get('pros', ['General use'])[:2])}
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
         
